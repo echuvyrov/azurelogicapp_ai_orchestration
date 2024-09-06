@@ -1,0 +1,165 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "For_each_file": {
+                "actions": {
+                    "Create_embeddings_with_Cohere": {
+                        "inputs": {
+                            "body": {
+                                "input": [
+                                    "@{body('Get_blob_content')}"
+                                ],
+                                "input_type": "document"
+                            },
+                            "headers": {
+                                "Authorization": "Bearer XYZ",
+                                "Content-Type": "application/json"
+                            },
+                            "method": "POST",
+                            "uri": "https://Cohere-embed-v3-multilingual-nzt.westus.models.ai.azure.com/embeddings"
+                        },
+                        "runAfter": {
+                            "Get_blob_content": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http"
+                    },
+                    "Get_blob_content": {
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                                }
+                            },
+                            "method": "get",
+                            "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/files/@{encodeURIComponent(encodeURIComponent(items('For_each_file')?['Path']))}/content"
+                        },
+                        "type": "ApiConnection"
+                    },
+                    "Index_a_document": {
+                        "inputs": {
+                            "body": {
+                                "contentVector": "@json(string(body('Create_embeddings_with_Cohere')?['data'][0]['embedding']))",
+                                "description": "@{body('Get_blob_content')}",
+                                "id": "@{guid()}",
+                                "name": "@{items('For_each_file')?['Name']}",
+                                "path": "@{items('For_each_file')?['Path']}",
+                                "searchaction": "upload"
+                            },
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azureaisearch']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "path": "/indexDocument",
+                            "queries": {
+                                "indexName": "finregs"
+                            }
+                        },
+                        "runAfter": {
+                            "Create_embeddings_with_Cohere": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "ApiConnection"
+                    }
+                },
+                "foreach": "@body('List_blobs')?['value']",
+                "runAfter": {
+                    "List_blobs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            },
+            "Initialize_variable": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "containerName",
+                            "type": "string",
+                            "value": "regs"
+                        }
+                    ]
+                },
+                "runAfter": {},
+                "type": "InitializeVariable"
+            },
+            "List_blobs": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/foldersV2/@{encodeURIComponent(encodeURIComponent(variables('containerName')))}"
+                },
+                "runAfter": {
+                    "Initialize_variable": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "When_a_blob_is_added_or_modified_(properties_only)_(V2)": {
+                "conditions": [],
+                "evaluatedRecurrence": {
+                    "frequency": "Second",
+                    "interval": 15
+                },
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('loansdata'))}/triggers/batch/onupdatedfile",
+                    "queries": {
+                        "folderId": "JTJmcmVncw==",
+                        "maxFileCount": 1
+                    }
+                },
+                "metadata": {
+                    "JTJmbG9hbnM=": "/loans",
+                    "JTJmcmVncw==": "/regs"
+                },
+                "recurrence": {
+                    "frequency": "Second",
+                    "interval": 15
+                },
+                "type": "ApiConnection"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azureaisearch": {
+                    "connectionId": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/resourceGroups/Update_FinRegs_group/providers/Microsoft.Web/connections/azureaisearch",
+                    "connectionName": "azureaisearch",
+                    "id": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/providers/Microsoft.Web/locations/westus/managedApis/azureaisearch"
+                },
+                "azureblob-1": {
+                    "connectionId": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/resourceGroups/Orchestrate_FinTrust_Flows_group/providers/Microsoft.Web/connections/azureblob-1",
+                    "connectionName": "azureblob-1",
+                    "id": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/providers/Microsoft.Web/locations/westus/managedApis/azureblob"
+                }
+            }
+        }
+    }
+}

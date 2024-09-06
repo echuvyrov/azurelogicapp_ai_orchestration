@@ -1,0 +1,262 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "Create_blob_(V2)": {
+                "inputs": {
+                    "body": "@body('HTTP')?['choices']?[0]?['message']?['content']",
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('loansdata'))}/files",
+                    "queries": {
+                        "folderPath": "/processedloans",
+                        "name": "extracted_loan_info.txt",
+                        "overwrite": true
+                    }
+                },
+                "runAfter": {
+                    "HTTP": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "For_Each_Descriptions": {
+                "actions": {
+                    "Append_to_array_variable": {
+                        "inputs": {
+                            "name": "DescriptionsArray",
+                            "value": "@concat(items('For_Each_Descriptions')?['name'], ': ', items('For_Each_Descriptions')?['description'], '\n\n')"
+                        },
+                        "type": "AppendToArrayVariable"
+                    }
+                },
+                "foreach": "@json(body('Search_vectors'))",
+                "runAfter": {
+                    "Initialize_Array_Variable": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            },
+            "Generate_Embeddings": {
+                "inputs": {
+                    "body": {
+                        "input": [
+                            "@{body('Get_blob_content')}"
+                        ],
+                        "input_type": "document"
+                    },
+                    "headers": {
+                        "Authorization": "Bearer FPRChpaok3ko94R6seuHMpxC8V9pK2gR",
+                        "Content-Type": "application/json"
+                    },
+                    "method": "POST",
+                    "uri": "https://Cohere-embed-v3-multilingual-nzt.westus.models.ai.azure.com/embeddings"
+                },
+                "runAfter": {
+                    "Get_blob_content": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "Get_blob_content": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('loansdata'))}/files/@{encodeURIComponent(encodeURIComponent('JTJmbG9hbnMlMmZsb2FuMy50eHQ='))}/content",
+                    "queries": {
+                        "inferContentType": true,
+                        "queryParametersSingleEncoded": true
+                    }
+                },
+                "metadata": {
+                    "JTJmbG9hbnMlMmZsb2FuMy50eHQ=": "/loans/loan3.txt"
+                },
+                "runAfter": {},
+                "type": "ApiConnection"
+            },
+            "HTTP": {
+                "inputs": {
+                    "body": {
+                        "messages": [
+                            {
+                                "content": "You are a data processor for a bank.",
+                                "role": "system"
+                            },
+                            {
+                                "content": "@concat('Use the loan application pasted below and properly parse the information in the following set of columns:\n\nno_of_dependents\neducation\nself_employed\nincome_annum\nloan_amount\nloan_term\ncibil_score\nresidential_assets_value\ncommercial_assets_value \n\n Add column names but do not add any other text or information. Use commas as separators. The loan application follows: ', body('Get_blob_content'))",
+                                "role": "user"
+                            }
+                        ]
+                    },
+                    "headers": {
+                        "Authorization": "mvTZC5MCGnBJxNukBx0BxWOSdOmgLzKV"
+                    },
+                    "method": "POST",
+                    "uri": "https://Cohere-command-r-plus-gjumj.westus.models.ai.azure.com/chat/completions"
+                },
+                "runAfter": {
+                    "Get_blob_content": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "Initialize_Array_Variable": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "DescriptionsArray",
+                            "type": "Array",
+                            "value": []
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Initialize_String_Variable": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "Initialize_String_Variable": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "JoinedDescriptions",
+                            "type": "String",
+                            "value": ""
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Search_vectors": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "Join_Array": {
+                "inputs": {
+                    "from": "@variables('DescriptionsArray')",
+                    "joinWith": " "
+                },
+                "runAfter": {
+                    "For_Each_Descriptions": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Join"
+            },
+            "Save_vector_search_output": {
+                "inputs": {
+                    "body": "@body('Join_Array')",
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('loansdata'))}/files",
+                    "queries": {
+                        "folderPath": "/processedloans",
+                        "name": "vector_search_output.txt",
+                        "overwrite": true
+                    }
+                },
+                "runAfter": {
+                    "Join_Array": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "Search_vectors": {
+                "inputs": {
+                    "body": "@json(string(body('Generate_Embeddings')?['data'][0]['embedding']))",
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureaisearch-1']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/vectorSearch",
+                    "queries": {
+                        "indexName": "finregs",
+                        "nearestNeighbors": 5,
+                        "vectorFieldsName": "contentVector"
+                    }
+                },
+                "runAfter": {
+                    "Generate_Embeddings": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "When_a_blob_is_added_or_modified_(properties_only)_(V2)": {
+                "evaluatedRecurrence": {
+                    "frequency": "Second",
+                    "interval": 15
+                },
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('loansdata'))}/triggers/batch/onupdatedfile",
+                    "queries": {
+                        "folderId": "loans",
+                        "maxFileCount": 1
+                    }
+                },
+                "metadata": {
+                    "JTJmbG9hbnM=": "/loans"
+                },
+                "recurrence": {
+                    "frequency": "Second",
+                    "interval": 15
+                },
+                "type": "ApiConnection"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azureaisearch-1": {
+                    "connectionId": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/resourceGroups/Orchestrate_FinTrust_Flows_group/providers/Microsoft.Web/connections/azureaisearch-1",
+                    "connectionName": "azureaisearch-1",
+                    "id": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/providers/Microsoft.Web/locations/westus/managedApis/azureaisearch"
+                },
+                "azureblob-1": {
+                    "connectionId": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/resourceGroups/Orchestrate_FinTrust_Flows_group/providers/Microsoft.Web/connections/azureblob-1",
+                    "connectionName": "azureblob-1",
+                    "id": "/subscriptions/bad51082-e017-4bfc-b7c3-07c1675181bb/providers/Microsoft.Web/locations/westus/managedApis/azureblob"
+                }
+            }
+        }
+    }
+}
