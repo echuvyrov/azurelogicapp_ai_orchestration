@@ -52,7 +52,7 @@
                         "input_type": "document"
                     },
                     "headers": {
-                        "Authorization": "Bearer FPRChpaok3ko94R6seuHMpxC8V9pK2gR",
+                        "Authorization": "Bearer XYZ",
                         "Content-Type": "application/json"
                     },
                     "method": "POST",
